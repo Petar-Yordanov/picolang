@@ -1,7 +1,7 @@
 import log;
 
-fn classify(n: Int) -> Int {
-    let result: Int = 0;
+fn classify(n: int) -> int {
+    let result: int = 0;
 
     switch (n) {
         case 0: {
@@ -25,9 +25,9 @@ fn classify(n: Int) -> Int {
     return result;
 }
 
-fn main() -> Int {
-    let x: Int = 5;
-    let r: Int = classify(x);
+fn main() -> int {
+    let x: int = 5;
+    let r: int = classify(x);
 
     log.logInfo("Result:");
     printInt(r);

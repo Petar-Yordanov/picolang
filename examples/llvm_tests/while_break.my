@@ -1,8 +1,8 @@
 import log;
 
-fn main() -> Int {
-    let i: Int = 0;
-    let sum: Int = 0;
+fn main() -> int {
+    let i: int = 0;
+    let sum: int = 0;
 
     while i < 10 {
         sum = sum + i;
