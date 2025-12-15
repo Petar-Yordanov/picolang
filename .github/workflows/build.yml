@@ -39,16 +39,19 @@ jobs:
             clang lld \
             llvm-14-dev clang-14 lld-14 \
             make \
-            ca-certificates curl
+            ca-certificates curl \
+            libffi-dev \
+            zlib1g-dev \
+            libtinfo-dev
 
       - name: Install deps (Fedora)
         if: matrix.mode == 'fedora'
         run: |
           dnf -y install \
+            git ca-certificates curl make \
             clang lld \
             llvm14 llvm14-devel \
-            make \
-            ca-certificates curl
+            libffi-devel zlib-devel ncurses-devel
 
       - name: Set LLVM_SYS_140_PREFIX
         shell: bash
@@ -63,13 +66,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cargo cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Build runtime (release)
         run: cargo build -p mylang-runtime --release
 
-      - name: Compile+run examples/modules (folder mode)
+      - name: Compile & Run examples/modules (folder mode)
         shell: bash
         env:
           MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
