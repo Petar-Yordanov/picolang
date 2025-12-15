@@ -1,0 +1,299 @@
+use std::alloc::{alloc, dealloc, Layout};
+use std::cell::RefCell;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+use std::ptr;
+
+#[repr(C)]
+struct GcHeader {
+    marked: u8,
+    _pad: [u8; 7],
+    size: usize,
+    next: *mut GcHeader,
+}
+
+#[repr(C)]
+struct IntArrayHeader {
+    len: i32,
+}
+
+struct GcState {
+    head: *mut GcHeader,
+    roots: Vec<*mut u8>,
+}
+
+impl GcState {
+    const fn new() -> Self {
+        Self {
+            head: ptr::null_mut(),
+            roots: Vec::new(),
+        }
+    }
+
+    unsafe fn alloc(&mut self, size: usize) -> *mut u8 {
+        let total = size
+            .checked_add(std::mem::size_of::<GcHeader>())
+            .expect("GC alloc overflow");
+
+        let layout = Layout::from_size_align(total, std::mem::align_of::<usize>()).unwrap();
+        let raw = alloc(layout) as *mut GcHeader;
+        if raw.is_null() {
+            eprintln!("mylang_runtime: out of memory");
+            std::process::abort();
+        }
+
+        (*raw).marked = 0;
+        (*raw).size = size;
+        (*raw).next = self.head;
+        self.head = raw;
+
+        raw.add(1) as *mut u8
+    }
+
+    unsafe fn add_root(&mut self, ptr: *mut u8) {
+        if !ptr.is_null() {
+            self.roots.push(ptr);
+        }
+    }
+
+    unsafe fn remove_root(&mut self, ptr: *mut u8) {
+        if ptr.is_null() {
+            return;
+        }
+        if let Some(idx) = self.roots.iter().position(|&p| p == ptr) {
+            self.roots.swap_remove(idx);
+        }
+    }
+
+    unsafe fn mark_from(&mut self, payload: *mut u8) {
+        if payload.is_null() {
+            return;
+        }
+
+        let header = (payload as *mut GcHeader).sub(1);
+        if (*header).marked != 0 {
+            return;
+        }
+        (*header).marked = 1;
+
+        let word_size = std::mem::size_of::<usize>();
+        let words = (*header).size / word_size;
+        let mut cur = payload as *mut usize;
+        let end = cur.add(words);
+
+        while cur < end {
+            let candidate = *cur as *mut u8;
+            if !candidate.is_null() {
+                let mut obj = self.head;
+                while !obj.is_null() {
+                    let obj_start = obj.add(1) as *mut u8;
+                    let obj_end = obj_start.add((*obj).size);
+                    if candidate >= obj_start && candidate < obj_end {
+                        self.mark_from(obj_start);
+                        break;
+                    }
+                    obj = (*obj).next;
+                }
+            }
+            cur = cur.add(1);
+        }
+    }
+
+    unsafe fn collect(&mut self) {
+        let len = self.roots.len();
+        for i in 0..len {
+            let root = self.roots[i];
+            self.mark_from(root);
+        }
+
+        let mut cur = self.head;
+        let mut prev: *mut GcHeader = ptr::null_mut();
+
+        while !cur.is_null() {
+            let next = (*cur).next;
+            if (*cur).marked == 0 {
+                let total = (*cur)
+                    .size
+                    .checked_add(std::mem::size_of::<GcHeader>())
+                    .unwrap();
+                let layout = Layout::from_size_align(total, std::mem::align_of::<usize>()).unwrap();
+
+                if !prev.is_null() {
+                    (*prev).next = next;
+                } else {
+                    self.head = next;
+                }
+
+                dealloc(cur as *mut u8, layout);
+            } else {
+                (*cur).marked = 0;
+                prev = cur;
+            }
+            cur = next;
+        }
+    }
+}
+
+thread_local! {
+    static GC: RefCell<GcState> = RefCell::new(GcState::new());
+}
+
+#[no_mangle]
+pub extern "C" fn mylang_gc_alloc(size: usize) -> *mut u8 {
+    GC.with(|gc| unsafe { gc.borrow_mut().alloc(size) })
+}
+
+#[no_mangle]
+pub extern "C" fn mylang_gc_add_root(ptr: *mut u8) {
+    GC.with(|gc| unsafe { gc.borrow_mut().add_root(ptr) })
+}
+
+#[no_mangle]
+pub extern "C" fn mylang_gc_remove_root(ptr: *mut u8) {
+    GC.with(|gc| unsafe { gc.borrow_mut().remove_root(ptr) })
+}
+
+#[no_mangle]
+pub extern "C" fn mylang_gc_collect() {
+    GC.with(|gc| unsafe { gc.borrow_mut().collect() })
+}
+
+#[no_mangle]
+pub extern "C" fn runtime_array_new_int(len: i32) -> *mut u8 {
+    let len = if len < 0 { 0 } else { len as usize };
+    let header_size = std::mem::size_of::<IntArrayHeader>();
+    let elem_size = std::mem::size_of::<i32>();
+    let payload_size = header_size + len * elem_size;
+
+    GC.with(|gc| unsafe {
+        let payload = gc.borrow_mut().alloc(payload_size);
+
+        let header = payload as *mut IntArrayHeader;
+        (*header).len = len as i32;
+
+        let data_ptr = (payload as *mut u8).add(header_size) as *mut i32;
+        for i in 0..len {
+            *data_ptr.add(i) = 0;
+        }
+
+        payload
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn runtime_array_len_int(arr: *mut u8) -> i32 {
+    if arr.is_null() {
+        return 0;
+    }
+    unsafe {
+        let header = arr as *mut IntArrayHeader;
+        (*header).len
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn runtime_array_get_int(arr: *mut u8, idx: i32) -> i32 {
+    if arr.is_null() {
+        return 0;
+    }
+    unsafe {
+        let header = arr as *mut IntArrayHeader;
+        let len = (*header).len;
+        if idx < 0 || idx >= len {
+            return 0;
+        }
+        let header_size = std::mem::size_of::<IntArrayHeader>();
+        let data_ptr = (arr as *mut u8).add(header_size) as *mut i32;
+        *data_ptr.add(idx as usize)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn runtime_array_set_int(arr: *mut u8, idx: i32, value: i32) {
+    if arr.is_null() {
+        return;
+    }
+    unsafe {
+        let header = arr as *mut IntArrayHeader;
+        let len = (*header).len;
+        if idx < 0 || idx >= len {
+            return;
+        }
+        let header_size = std::mem::size_of::<IntArrayHeader>();
+        let data_ptr = (arr as *mut u8).add(header_size) as *mut i32;
+        *data_ptr.add(idx as usize) = value;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn printInt(x: i32) {
+    println!("{x}");
+}
+
+#[no_mangle]
+pub extern "C" fn printChar(ch: u8) {
+    use std::io::{self, Write};
+    let c = ch as char;
+    print!("{c}");
+    let _ = io::stdout().flush();
+}
+
+#[no_mangle]
+pub extern "C" fn printString(ptr: *const u8) {
+    use std::io::{self, Write};
+
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe {
+        let c_str = CStr::from_ptr(ptr as *const c_char);
+        if let Ok(s) = c_str.to_str() {
+            print!("{s}");
+            let _ = io::stdout().flush();
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn log_logInfo(ptr: *const u8) {
+    if ptr.is_null() {
+        return;
+    }
+
+    unsafe {
+        let c_str = CStr::from_ptr(ptr as *const c_char);
+        if let Ok(s) = c_str.to_str() {
+            eprintln!("[info] {s}");
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn runtime_read_file(path: *const u8) -> *mut u8 {
+    if path.is_null() {
+        return ptr::null_mut();
+    }
+
+    let filename = unsafe {
+        let c_str = CStr::from_ptr(path as *const c_char);
+        match c_str.to_str() {
+            Ok(s) => s,
+            Err(_) => return ptr::null_mut(),
+        }
+    };
+
+    let data = match std::fs::read(filename) {
+        Ok(d) => d,
+        Err(_) => return ptr::null_mut(),
+    };
+
+    let len = data.len();
+
+    GC.with(|gc| unsafe {
+        let payload = gc.borrow_mut().alloc(len + 1);
+        ptr::copy_nonoverlapping(data.as_ptr(), payload, len);
+        *payload.add(len) = 0;
+        payload
+    })
+}

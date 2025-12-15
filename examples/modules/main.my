@@ -1,0 +1,115 @@
+import math;
+import color;
+import geometry;
+import box;
+import option;
+import result;
+import strings;
+import io;
+import log;
+import loops;
+
+fn main() -> int {
+    let x: int = 1 + 2 * 3;
+    let truth: bool = x > 0;
+    let b: byte = 255;
+    let ch: char = 'Z';
+    let greeting: string = "Hello, world";
+
+    let numbers: []int;
+    let nums: []int;
+
+    if truth {
+        log.logInfo("truth is true");
+    } else {
+        log.logInfo("truth is false");
+    }
+
+    let n: int = 5;
+    let fact: int = math.factorial(n);
+
+    let total: int = math.sumArray(numbers);
+
+    let c: color.Color = color.Color.Rgb(120, 200, 150);
+    let bright: bool = color.isBright(c);
+
+    let first: option.Option[char] = strings.firstChar(greeting);
+
+    switch first {
+        case option.Option.Some(firstCh) {
+            log.logInfo("first char is:");
+            printChar(firstCh);
+        }
+        case option.Option.None {
+            log.logInfo("empty string!");
+        }
+    }
+
+    let boxed: box.Box[int];
+    let value: int = boxed.get();
+
+    let config: result.Result[string, io.IoError] = io.readConfig("config.txt");
+
+    switch config {
+        case result.Result.Ok(text) {
+            log.logInfo("config loaded");
+            log.logInfo(text);
+        }
+        case result.Result.Err(err) {
+            log.logInfo("failed to load config");
+
+            switch err {
+                case io.IoError.NotFound {
+                    log.logInfo("reason: not found");
+                }
+                case io.IoError.PermissionDenied {
+                    log.logInfo("reason: permission denied");
+                }
+                case io.IoError.Unknown {
+                    log.logInfo("reason: unknown error");
+                }
+            }
+        }
+    }
+
+    let origin: geometry.Point = geometry.newPoint(0, 0);
+    let p: geometry.Point = geometry.newPoint(3, 4);
+    let moved: geometry.Point = p.translate(1, -2);
+    let dist: int = moved.manhattanLength();
+
+    if bright && ch == 'Z' && b == 255 {
+        log.logInfo("all checks passed (bright && ch == 'Z' && b == 255)");
+    }
+
+    if false {
+        log.logInfo("unreachable branch taken (BUG)");
+    }
+
+    log.logInfo("== demo: math ==");
+    log.logInfo("factorial(5) =");
+    printInt(fact);
+
+    log.logInfo("sumArray(numbers)");
+    printInt(total);
+
+    log.logInfo("== demo: geometry ==");
+    log.logInfo("distance of moved point =");
+    printInt(dist);
+
+    log.logInfo("== demo: box ==");
+    log.logInfo("boxed.get() =");
+    printInt(value);
+
+    log.logInfo("== demo: arrays ==");
+    log.logInfo("math.sumArray(nums) (uninitialized []int) =");
+    printInt(s1);
+
+    log.logInfo("math.sumRange(10) =");
+    printInt(s2);
+
+    log.logInfo("== demo: loops ==");
+    loops.loopsDemo();
+
+    log.logInfo("== demo complete ==");
+    return 0;
+}
