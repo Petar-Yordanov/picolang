@@ -1,0 +1,163 @@
+name: mylang
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            mode: ubuntu
+          - name: fedora
+            mode: fedora
+
+    container: ${{ matrix.mode == 'fedora' && 'fedora:41' || '' }}
+
+    steps:
+      - name: Install git (Fedora container)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y update
+          dnf -y install git ca-certificates curl
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (Ubuntu)
+        if: matrix.mode == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang lld \
+            llvm-14-dev clang-14 lld-14 \
+            make \
+            ca-certificates curl
+
+      - name: Install deps (Fedora)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y install \
+            clang lld \
+            llvm14 llvm14-devel \
+            make \
+            ca-certificates curl
+
+      - name: Set LLVM_SYS_140_PREFIX
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.mode }}" = "ubuntu" ]; then
+            echo "LLVM_SYS_140_PREFIX=/usr/lib/llvm-14" >> "$GITHUB_ENV"
+          else
+            echo "LLVM_SYS_140_PREFIX=/usr/lib64/llvm14" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build runtime (release)
+        run: cargo build -p mylang-runtime --release
+
+      - name: Compile+run examples/modules (folder mode)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          cargo run -p mylang-compiler -- examples/modules
+
+          CLANG=clang
+          command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
+
+          $CLANG examples/modules/program.o \
+            -L target/release -lmylang_runtime \
+            -o examples/modules/program
+
+          ./examples/modules/program
+          echo "exit_code=$?"
+          test $? -eq 0
+
+      - name: Run examples/llvm_tests per-file (must succeed)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          CLANG=clang
+          command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
+
+          mkdir -p target/ci/llvm_tests
+
+          shopt -s nullglob
+          files=(examples/llvm_tests/*.my)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No .my files in examples/llvm_tests"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            base="$(basename "$f" .my)"
+            echo "== llvm_tests: $f =="
+
+            # marker to locate the freshly produced program.o
+            marker="target/ci/llvm_tests/.marker_${base}"
+            rm -f "$marker"
+            mkdir -p target/ci/llvm_tests
+            : > "$marker"
+
+            # compile this single file
+            cargo run -p mylang-compiler -- "$f"
+
+            # find the newest program.o produced after marker
+            obj="$(find examples -name program.o -newer "$marker" -print | head -n 1 || true)"
+            if [ -z "$obj" ]; then
+              echo "Could not find program.o produced by compiling $f"
+              exit 1
+            fi
+
+            out="target/ci/llvm_tests/$base"
+            $CLANG "$obj" -L target/release -lmylang_runtime -o "$out"
+
+            "$out"
+            ec=$?
+            echo "exit_code=$ec"
+            test $ec -eq 0
+          done
+
+      - name: Run examples/error_modules per-file (must fail)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          files=(examples/error_modules/*.my)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No .my files in examples/error_modules"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            echo "== error_modules: $f =="
+
+            if cargo run -p mylang-compiler -- "$f"; then
+              echo "Expected failure but compiler succeeded: $f"
+              exit 1
+            else
+              echo "Got expected failure: $f"
+            fi
+          done
