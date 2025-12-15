@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  build_test:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
 

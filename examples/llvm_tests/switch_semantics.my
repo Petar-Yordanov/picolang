@@ -1,5 +1,3 @@
-import log;
-
 fn classify(n: int) -> int {
     let result: int = 0;
 

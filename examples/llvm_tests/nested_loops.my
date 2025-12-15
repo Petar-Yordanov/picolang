@@ -1,5 +1,3 @@
-import log;
-
 fn score(n: int) -> int {
     let s: int = 0;
 
