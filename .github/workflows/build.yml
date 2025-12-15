@@ -76,7 +76,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          cargo run -p mylang-compiler -- examples/modules
+          cargo build -p mylang-compiler --release
+          cargo run -p mylang-compiler --release -- examples/modules
 
           CLANG=clang
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
@@ -99,8 +100,6 @@ jobs:
           CLANG=clang
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
-          mkdir -p target/ci/llvm_tests
-
           shopt -s nullglob
           files=(examples/llvm_tests/*.my)
           if [ ${#files[@]} -eq 0 ]; then
@@ -109,26 +108,23 @@ jobs:
           fi
 
           for f in "${files[@]}"; do
+            dir="$(dirname "$f")"
             base="$(basename "$f" .my)"
-            echo "== llvm_tests: $f =="
+            obj="$dir/$base.o"
+            out="$dir/$base"
 
-            # marker to locate the freshly produced program.o
-            marker="target/ci/llvm_tests/.marker_${base}"
-            rm -f "$marker"
-            mkdir -p target/ci/llvm_tests
-            : > "$marker"
+            echo "== llvm_test: $f =="
 
-            # compile this single file
+            rm -f "$obj" "$out"
+
             cargo run -p mylang-compiler -- "$f"
 
-            # find the newest program.o produced after marker
-            obj="$(find examples -name program.o -newer "$marker" -print | head -n 1 || true)"
-            if [ -z "$obj" ]; then
-              echo "Could not find program.o produced by compiling $f"
+            if [ ! -f "$obj" ]; then
+              echo "Expected object not found: $obj"
+              ls -la "$dir"
               exit 1
             fi
 
-            out="target/ci/llvm_tests/$base"
             $CLANG "$obj" -L target/release -lmylang_runtime -o "$out"
 
             "$out"
@@ -152,12 +148,26 @@ jobs:
           fi
 
           for f in "${files[@]}"; do
-            echo "== error_modules: $f =="
+            dir="$(dirname "$f")"
+            base="$(basename "$f" .my)"
+            obj="$dir/$base.o"
+            out="$dir/$base"
+
+            echo "== error_module: $f =="
+
+            rm -f "$obj" "$out"
 
             if cargo run -p mylang-compiler -- "$f"; then
-              echo "Expected failure but compiler succeeded: $f"
+              echo "Expected compiler failure, but it succeeded: $f"
               exit 1
             else
               echo "Got expected failure: $f"
+            fi
+
+            # extra safety: ensure it didn't accidentally emit outputs
+            if [ -e "$obj" ] || [ -e "$out" ]; then
+              echo "Unexpected outputs produced for an error test: $f"
+              ls -la "$dir"
+              exit 1
             fi
           done
