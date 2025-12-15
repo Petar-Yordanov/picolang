@@ -83,7 +83,7 @@ jobs:
           CLANG=clang
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
-          $CLANG examples/modules/program.o \
+          $CLANG -no-pie examples/modules/program.o \
             -L target/release -lmylang_runtime \
             -o examples/modules/program
 
@@ -118,7 +118,7 @@ jobs:
 
             rm -f "$obj" "$out"
 
-            cargo run -p mylang-compiler -- "$f"
+            cargo run -p mylang-compiler --release -- "$f"
 
             if [ ! -f "$obj" ]; then
               echo "Expected object not found: $obj"
@@ -126,7 +126,7 @@ jobs:
               exit 1
             fi
 
-            $CLANG "$obj" -L target/release -lmylang_runtime -o "$out"
+            $CLANG -no-pie "$obj" -L target/release -lmylang_runtime -o "$out"
 
             "$out"
             ec=$?
@@ -158,7 +158,7 @@ jobs:
 
             rm -f "$obj" "$out"
 
-            if cargo run -p mylang-compiler -- "$f"; then
+            if cargo run -p mylang-compiler --release -- "$f"; then
               echo "Expected compiler failure, but it succeeded: $f"
               exit 1
             else

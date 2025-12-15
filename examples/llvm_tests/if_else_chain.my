@@ -1,3 +1,5 @@
+import log;
+
 fn classify(n: Int) -> Int {
     if n < 0 {
         return -1;
@@ -17,5 +19,9 @@ fn main() -> Int {
     let d: Int = classify(20);
 
     let result: Int = a + b + c + d + 1;
-    return result;
+
+    log.logInfo("Result:");
+    printInt(result);
+
+    return 0;
 }
