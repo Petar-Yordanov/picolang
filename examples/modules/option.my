@@ -1,0 +1,23 @@
+enum Option[T] {
+    Some(T),
+    None,
+}
+
+fn some[T](value: T) -> Option[T] {
+    return Option.Some(value);
+}
+
+fn none[T]() -> Option[T] {
+    return Option.None;
+}
+
+fn unwrapOr[T](opt: Option[T], fallback: T) -> T {
+    switch opt {
+        case Option.Some(value) {
+            return value;
+        }
+        case Option.None {
+            return fallback;
+        }
+    }
+}

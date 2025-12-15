@@ -1,0 +1,40 @@
+fn score(n: Int) -> Int {
+    let s: Int = 0;
+
+    switch (n) {
+        case 0: {
+            s = 0;
+            break;
+        }
+        case 1: {
+            s = 1;
+            break;
+        }
+        case 2: {
+            s = 2;
+            break;
+        }
+        default: {
+            s = 3;
+            break;
+        }
+    }
+
+    return s;
+}
+
+fn main() -> Int {
+    let total: Int = 0;
+
+    for (let i: Int = 0; i < 3; i = i + 1) {
+        for (let j: Int = 0; j < 3; j = j + 1) {
+            let sum: Int = i + j;
+            let s: Int = score(sum);
+            total = total + s;
+        }
+    }
+
+    total = total + 25;
+
+    return total;
+}

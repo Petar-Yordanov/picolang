@@ -1,0 +1,7 @@
+// Top level let is not allowed
+
+let x: int = 1;
+
+fn main() -> int {
+    return 0;
+}

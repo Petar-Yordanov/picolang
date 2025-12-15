@@ -1,0 +1,16 @@
+fn main() -> Int {
+    let i: Int = 0;
+    let sum: Int = 0;
+
+    while i < 10 {
+        sum = sum + i;
+
+        if sum > 10 {
+            break;
+        }
+
+        i = i + 1;
+    }
+
+    return sum;
+}

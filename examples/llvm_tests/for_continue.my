@@ -1,0 +1,13 @@
+fn main() -> int {
+    let sum: int = 0;
+
+    for (let i: int = 0; i < 8; i = i + 1) {
+        if (i < 4) {
+            continue;
+        }
+
+        sum = sum + i;
+    }
+
+    return sum;
+}

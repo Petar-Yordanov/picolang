@@ -1,0 +1,21 @@
+fn classify(n: Int) -> Int {
+    if n < 0 {
+        return -1;
+    } else if n == 0 {
+        return 0;
+    } else if n < 10 {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+fn main() -> Int {
+    let a: Int = classify(-5);
+    let b: Int = classify(0);
+    let c: Int = classify(7);
+    let d: Int = classify(20);
+
+    let result: Int = a + b + c + d + 1;
+    return result;
+}
