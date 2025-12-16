@@ -83,13 +83,30 @@ jobs:
           CLANG=clang
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
-          $CLANG -no-pie examples/modules/program.o \
-            -L target/release -lmylang_runtime \
-            -o examples/modules/program
+          target="examples/modules"
+          if [ -d "$target" ]; then
+            entry="$target/main.my"
+          else
+            entry="$target"
+          fi
 
-          ./examples/modules/program
-          echo "exit_code=$?"
-          test $? -eq 0
+          obj="${entry%.my}.o"
+          out="${entry%.my}"
+
+          if [ ! -f "$obj" ]; then
+            echo "Expected object not found: $obj"
+            ls -la "$(dirname "$obj")"
+            exit 1
+          fi
+
+          $CLANG -no-pie "$obj" \
+            -L target/release -lmylang_runtime \
+            -o "$out"
+
+          "$out"
+          ec=$?
+          echo "exit_code=$ec"
+          test $ec -eq 0
 
       - name: Run examples/llvm_tests per-file (must succeed)
         shell: bash
