@@ -1,0 +1,191 @@
+name: mylang
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build_test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            mode: ubuntu
+          - name: fedora
+            mode: fedora
+
+    container: ${{ matrix.mode == 'fedora' && 'fedora:41' || '' }}
+
+    steps:
+      - name: Install git (Fedora container)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y update
+          dnf -y install git ca-certificates curl
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install deps (Ubuntu)
+        if: matrix.mode == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang lld \
+            llvm-14-dev clang-14 lld-14 \
+            libpolly-14-dev \
+            make \
+            ca-certificates curl \
+            libffi-dev \
+            zlib1g-dev \
+            libtinfo-dev
+
+      - name: Install deps (Fedora)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y install \
+            git ca-certificates curl make \
+            clang lld \
+            llvm14 llvm14-devel \
+            libffi-devel zlib-devel ncurses-devel
+
+      - name: Set LLVM_SYS_140_PREFIX
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.mode }}" = "ubuntu" ]; then
+            echo "LLVM_SYS_140_PREFIX=/usr/lib/llvm-14" >> "$GITHUB_ENV"
+          else
+            echo "LLVM_SYS_140_PREFIX=/usr/lib64/llvm14" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build runtime (release)
+        run: cargo build -p mylang-runtime --release
+
+      - name: Compile & Run examples/modules (folder mode)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          cargo build -p mylang-compiler --release
+          cargo run -p mylang-compiler --release -- examples/modules
+
+          CLANG=clang
+          command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
+
+          target="examples/modules"
+          if [ -d "$target" ]; then
+            entry="$target/main.my"
+          else
+            entry="$target"
+          fi
+
+          obj="${entry%.my}.o"
+          out="${entry%.my}"
+
+          if [ ! -f "$obj" ]; then
+            echo "Expected object not found: $obj"
+            ls -la "$(dirname "$obj")"
+            exit 1
+          fi
+
+          $CLANG -no-pie "$obj" \
+            -L target/release -lmylang_runtime \
+            -o "$out"
+
+          "$out"
+          ec=$?
+          echo "exit_code=$ec"
+          test $ec -eq 0
+
+      - name: Run examples/llvm_tests per-file (must succeed)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          CLANG=clang
+          command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
+
+          shopt -s nullglob
+          files=(examples/llvm_tests/*.my)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No .my files in examples/llvm_tests"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            dir="$(dirname "$f")"
+            base="$(basename "$f" .my)"
+            obj="$dir/$base.o"
+            out="$dir/$base"
+
+            echo "== llvm_test: $f =="
+
+            rm -f "$obj" "$out"
+
+            cargo run -p mylang-compiler --release -- "$f"
+
+            if [ ! -f "$obj" ]; then
+              echo "Expected object not found: $obj"
+              ls -la "$dir"
+              exit 1
+            fi
+
+            $CLANG -no-pie "$obj" -L target/release -lmylang_runtime -o "$out"
+
+            "$out"
+            ec=$?
+            echo "exit_code=$ec"
+            test $ec -eq 0
+          done
+
+      - name: Run examples/error_modules per-file (must fail)
+        shell: bash
+        env:
+          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          files=(examples/error_modules/*.my)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No .my files in examples/error_modules"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            dir="$(dirname "$f")"
+            base="$(basename "$f" .my)"
+            obj="$dir/$base.o"
+            out="$dir/$base"
+
+            echo "== error_module: $f =="
+
+            rm -f "$obj" "$out"
+
+            if cargo run -p mylang-compiler --release -- "$f"; then
+              echo "Expected compiler failure, but it succeeded: $f"
+              exit 1
+            else
+              echo "Got expected failure: $f"
+            fi
+
+            # extra safety: ensure it didn't accidentally emit outputs
+            if [ -e "$obj" ] || [ -e "$out" ]; then
+              echo "Unexpected outputs produced for an error test: $f"
+              ls -la "$dir"
+              exit 1
+            fi
+          done

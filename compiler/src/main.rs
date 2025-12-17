@@ -2,84 +2,35 @@ use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use mylang_compiler::diagnostics::Diagnostic;
 use mylang_compiler::ir::lower_modules_to_ir;
 use mylang_compiler::llvm_codegen::compile_ir_to_object;
-use mylang_compiler::module_loader::{
-    load_program_from_dir, load_program_from_root_file, ModuleDiagnostics,
-};
-use mylang_compiler::parser::parse_source;
-use mylang_compiler::symbols::{build_symbol_table, check_module_exprs};
+use mylang_compiler::module_loader::{load_program_from_root_file, ModuleDiagnostics};
 
-fn main() {
-    let arg = env::args().nth(1);
+fn main() -> ExitCode {
+    let mut args = env::args().skip(1);
+    let Some(path) = args.next() else {
+        eprintln!("usage: mylang-compiler <path-to-entry-file.my | path-to-project-dir>");
+        return ExitCode::FAILURE;
+    };
 
-    match arg {
-        Some(path) => {
-            let path = PathBuf::from(path);
-            handle_entry_path(&path);
-        }
+    if args.next().is_some() {
+        eprintln!("error: expected exactly one argument");
+        eprintln!("usage: mylang-compiler <path-to-entry-file.my | path-to-project-dir>");
+        return ExitCode::FAILURE;
+    }
 
-        None => {
-            println!("=== Building program from examples/modules (expected to succeed) ===");
-
-            match load_program_from_dir(Path::new("examples/modules")) {
-                Ok((program, module_diags)) => {
-                    if !module_diags.is_empty() {
-                        for md in &module_diags {
-                            print_module_diags(md);
-                        }
-                    } else {
-                        let ir_module = lower_modules_to_ir(program.modules.iter().map(|m| &m.ast));
-
-                        println!("==============================");
-                        println!("Lowered IR for program in directory examples/modules");
-                        println!("------------------------------");
-                        println!("{:#?}", ir_module);
-
-                        // Emit object file via LLVM backend + link to executable
-                        let obj_path = Path::new("examples_modules.o");
-                        match compile_ir_to_object(&ir_module, "examples_modules", obj_path) {
-                            Ok(()) => {
-                                println!();
-                                println!(
-                                    "LLVM codegen: wrote object file to {}",
-                                    obj_path.display()
-                                );
-
-                                let exe_path = exe_path_for_object(obj_path);
-                                match link_object_to_executable(obj_path, &exe_path) {
-                                    Ok(()) => {
-                                        println!(
-                                            "Linker: wrote executable to {}",
-                                            exe_path.display()
-                                        );
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Linker failed: {}", e);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("LLVM codegen failed: {}", e);
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    eprintln!("error: failed to load program from examples/modules: {}", e);
-                }
-            }
-
-            println!();
-            println!("=== Parsing examples/error_modules (expected to show errors) ===");
-            handle_error_dir("examples/error_modules");
-        }
+    let ok = handle_entry_path(Path::new(&path));
+    if ok {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
-fn handle_entry_path(path: &Path) {
+fn handle_entry_path(path: &Path) -> bool {
     let meta = match fs::metadata(path) {
         Ok(m) => m,
         Err(e) => {
@@ -88,123 +39,77 @@ fn handle_entry_path(path: &Path) {
                 path.display(),
                 e
             );
-            return;
+            return false;
         }
     };
 
-    if meta.is_dir() {
-        println!("=== Building program from directory {} ===", path.display());
-
+    let entry_file = if meta.is_dir() {
         let main_path = path.join("main.my");
         if !main_path.is_file() {
             eprintln!(
                 "error: directory {} does not contain a main.my file (expected entry point)",
                 path.display()
             );
-            return;
+            return false;
         }
-
-        println!("Using {} as program entry file", main_path.display());
-
-        match load_program_from_root_file(&main_path) {
-            Ok((program, module_diags)) => {
-                if !module_diags.is_empty() {
-                    for md in &module_diags {
-                        print_module_diags(md);
-                    }
-                } else {
-                    let ir_module = lower_modules_to_ir(program.modules.iter().map(|m| &m.ast));
-
-                    println!("==============================");
-                    println!("Lowered IR for program rooted at {}", main_path.display());
-                    println!("------------------------------");
-                    println!("{:#?}", ir_module);
-
-                    let module_name = path
-                        .file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("program");
-                    let obj_path = path.join("program.o");
-
-                    match compile_ir_to_object(&ir_module, module_name, &obj_path) {
-                        Ok(()) => {
-                            println!();
-                            println!("LLVM codegen: wrote object file to {}", obj_path.display());
-
-                            let exe_path = exe_path_for_object(&obj_path);
-                            match link_object_to_executable(&obj_path, &exe_path) {
-                                Ok(()) => {
-                                    println!("Linker: wrote executable to {}", exe_path.display());
-                                }
-                                Err(e) => {
-                                    eprintln!("Linker failed: {}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("LLVM codegen failed: {}", e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "error: failed to load program from {}: {}",
-                    main_path.display(),
-                    e
-                );
-            }
-        }
+        main_path
     } else {
-        println!("=== Building program rooted at file {} ===", path.display());
-        match load_program_from_root_file(path) {
-            Ok((program, module_diags)) => {
-                if !module_diags.is_empty() {
-                    for md in &module_diags {
-                        print_module_diags(md);
-                    }
-                } else {
-                    let ir_module = lower_modules_to_ir(program.modules.iter().map(|m| &m.ast));
+        path.to_path_buf()
+    };
 
-                    println!("==============================");
-                    println!("Lowered IR for program rooted at {}", path.display());
-                    println!("------------------------------");
-                    println!("{:#?}", ir_module);
+    println!(
+        "=== Building program rooted at file {} ===",
+        entry_file.display()
+    );
 
-                    let module_name = path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("program");
-                    let obj_path = path.with_extension("o");
+    let (program, module_diags) = match load_program_from_root_file(&entry_file) {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!(
+                "error: failed to load program from {}: {}",
+                entry_file.display(),
+                e
+            );
+            return false;
+        }
+    };
 
-                    match compile_ir_to_object(&ir_module, module_name, &obj_path) {
-                        Ok(()) => {
-                            println!();
-                            println!("LLVM codegen: wrote object file to {}", obj_path.display());
+    if !module_diags.is_empty() {
+        for md in &module_diags {
+            print_module_diags(md);
+        }
+        return false;
+    }
 
-                            let exe_path = exe_path_for_object(&obj_path);
-                            match link_object_to_executable(&obj_path, &exe_path) {
-                                Ok(()) => {
-                                    println!("Linker: wrote executable to {}", exe_path.display());
-                                }
-                                Err(e) => {
-                                    eprintln!("Linker failed: {}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("LLVM codegen failed: {}", e);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!(
-                    "error: failed to load program from {}: {}",
-                    path.display(),
-                    e
-                );
-            }
+    let ir_module = lower_modules_to_ir(program.modules.iter().map(|m| &m.ast));
+
+    let module_name = entry_file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("program");
+
+    let obj_path = entry_file.with_extension("o");
+
+    match compile_ir_to_object(&ir_module, module_name, &obj_path) {
+        Ok(()) => {
+            println!();
+            println!("LLVM codegen: wrote object file to {}", obj_path.display());
+        }
+        Err(e) => {
+            eprintln!("LLVM codegen failed: {}", e);
+            return false;
+        }
+    }
+
+    let exe_path = exe_path_for_object(&obj_path);
+    match link_object_to_executable(&obj_path, &exe_path) {
+        Ok(()) => {
+            println!("Linker: wrote executable to {}", exe_path.display());
+            true
+        }
+        Err(e) => {
+            eprintln!("Linker failed: {}", e);
+            false
         }
     }
 }
@@ -215,69 +120,6 @@ fn print_module_diags(md: &ModuleDiagnostics) {
     println!("------------------------------");
     let filename = md.path.to_string_lossy().to_string();
     print_diagnostics(&filename, &md.source, &md.diagnostics);
-}
-
-fn handle_error_dir(dir: &str) {
-    let mut entries: Vec<_> = match fs::read_dir(dir) {
-        Ok(read_dir) => read_dir
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.extension().and_then(|s| s.to_str()) == Some("my") {
-                    Some(path)
-                } else {
-                    None
-                }
-            })
-            .collect(),
-        Err(e) => {
-            eprintln!("error: failed to read directory {}: {}", dir, e);
-            return;
-        }
-    };
-
-    entries.sort();
-
-    for path in entries {
-        handle_error_file(&path);
-    }
-}
-
-fn handle_error_file(path: &Path) {
-    let filename = path.to_string_lossy().to_string();
-    let source = match fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("failed to read {}: {}", filename, e);
-            return;
-        }
-    };
-
-    match parse_source(&source) {
-        Ok(module) => {
-            let (symtab, mut sym_diags) = build_symbol_table(&module);
-            let mut expr_diags = check_module_exprs(&module, &symtab);
-            sym_diags.append(&mut expr_diags);
-
-            if !sym_diags.is_empty() {
-                println!("==============================");
-                println!("Semantic errors (symbol table / exprs) in {}", filename);
-                println!("------------------------------");
-                print_diagnostics(&filename, &source, &sym_diags);
-            } else {
-                println!("==============================");
-                println!("Parsed & resolved symbols for {}", filename);
-                println!("------------------------------");
-                println!("(no diagnostics)");
-            }
-        }
-        Err(diags) => {
-            println!("==============================");
-            println!("Parsing file: {}", filename);
-            println!("------------------------------");
-            print_diagnostics(&filename, &source, &diags);
-        }
-    }
 }
 
 fn print_diagnostics(filename: &str, source: &str, diags: &[Diagnostic]) {
@@ -331,11 +173,7 @@ fn print_one_diagnostic(filename: &str, source: &str, d: &Diagnostic, line: usiz
     let mut underline = String::new();
     for (byte_idx, ch) in line_text.char_indices() {
         if byte_idx < rel_start {
-            if ch == '\t' {
-                underline.push('\t');
-            } else {
-                underline.push(' ');
-            }
+            underline.push(if ch == '\t' { '\t' } else { ' ' });
         } else if byte_idx < rel_end {
             underline.push('^');
         }

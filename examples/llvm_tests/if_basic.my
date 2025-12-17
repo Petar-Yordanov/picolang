@@ -11,5 +11,8 @@ fn main() -> int {
         result = -1;
     }
 
-    return result;
+    log.logInfo("Result:");
+    printInt(result);
+
+    return 0;
 }
