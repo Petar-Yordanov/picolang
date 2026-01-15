@@ -129,12 +129,12 @@ PicoLang builds a native runtime library and a compiler that uses LLVM for code 
 3. Build
    ```sh
    # Debug
-   cargo build -p mylang-runtime
-   cargo build -p mylang-compiler
+   cargo build -p picolang-runtime
+   cargo build -p picolang-compiler
 
    # Release
-   cargo build -p mylang-runtime --release
-   cargo build -p mylang-compiler --release
+   cargo build -p picolang-runtime --release
+   cargo build -p picolang-compiler --release
    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -144,15 +144,15 @@ PicoLang builds a native runtime library and a compiler that uses LLVM for code 
 
 1. Compile module folder
    ```sh
-   export MYLANG_RUNTIME_LIB_DIR="$PWD/target/release"
+   export PICOLANG_RUNTIME_LIB_DIR="$PWD/target/debug"
 
-   cargo run -p mylang-compiler --release -- examples/modules
+   cargo run -p picolang-compiler -- examples/modules
    ```
 2. Compile single file
    ``` sh
-   export MYLANG_RUNTIME_LIB_DIR="$PWD/target/release"
+   export PICOLANG_RUNTIME_LIB_DIR="$PWD/target/debug"
 
-   cargo run -p mylang-compiler --release -- examples/llvm_tests/some_test.my
+   cargo run -p picolang-compiler -- examples/llvm_tests/some_test.pico
    ```
 3. Link and run
    ```sh
@@ -160,7 +160,7 @@ PicoLang builds a native runtime library and a compiler that uses LLVM for code 
    command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
    $CLANG -no-pie examples/llvm_tests/some_test.o \
-      -L target/release -lmylang_runtime \
+      -L target/release -lpicolang_runtime \
       -o examples/llvm_tests/some_test
 
    ./examples/llvm_tests/some_test
@@ -173,15 +173,21 @@ PicoLang builds a native runtime library and a compiler that uses LLVM for code 
 - [x] **Language**
   - [x] Primitive types (`int`, `bool`, `void`, `char`, `byte`, `string`)
   - [x] Arrays + indexing (`[T]{...}`, `x[i]`, `len(x)`)
+    - [x] Uninitialized `[]T` behaves as null/empty (`len(null)=0`, indexing guarded in runtime)
   - [x] Functions (params, return types)
   - [x] Variables (`let`, assignment)
-  - [x] Control flow (`if/else`, `while`, `for`, `switch/case/default`, `break/continue`, `return`)
-  - [x] Imports (`import a.b.c;`)
+  - [x] Control flow (`if/else`, `while`, `for`, `break/continue`, `return`)
+  - [ ] `switch` support (semantic lowering + codegen)
+    - [ ] `switch` on enums + pattern binds
+  - [x] Imports (`import a.b.c;`) + module-qualified calls
   - [x] User types: `class`, `enum` (syntax + parsing)
-  - [ ] Type parameters / generics end-to-end (beyond parsing)
-  - [ ] Real type checking for function calls (arg/param matching)
-  - [ ] `switch` support
-  - [ ] Classes/enums semantics support
+  - [x] Type parameters / generics
+  - [ ] Real type checking for function calls (arg/param matching, overload resolution, generics)
+  - [x] Classes semantics
+    - [x] Object model exists (GC-backed blob allocation + field load/store by offsets)
+    - [x] Field assignment reads/writes work
+  - [x] Enums semantics
+    - [x] Enum variant ctor lowering exists
 
 - [x] **Compiler pipeline**
   - [x] Lexer + token stream
@@ -191,21 +197,23 @@ PicoLang builds a native runtime library and a compiler that uses LLVM for code 
   - [x] Basic type checking for expressions and returns
   - [x] AST to IR lowering (basic blocks + terminators)
   - [x] LLVM codegen (IR to object file)
+  - [x] Cross-module naming works (`module.fn`, `module.Class.method`)
+  - [x] Method call resolution works
+  - [x] String `+` works
+  - [x] Extern/runtime calls
+    - [x] Links against runtime-provided symbols (print/log/file/object helpers)
 
 - [x] **Runtime / stdlib**
   - [x] Runtime library linked into executables
-  - [x] Garbage collector (mark/sweep with roots)
+  - [x] Garbage collector (mark/sweep)
   - [x] Console I/O (`printInt`, `printChar`, `printString`, logging)
-  - [x] File I/O (`runtime_read_file`)
-  - [ ] More stdlib (collections, string utilities, formatting)
-  - [ ] Expanded file APIs (write, list, path helpers)
-  - [ ] GC tuning + safer root management
+  - [x] File I/O
+  - [x] Object model helpers
 
 - [x] **Examples + CI**
   - [x] Folder-mode module builds (`examples/modules`)
   - [x] LLVM tests that must succeed (`examples/llvm_tests`)
   - [x] Negative tests that must fail (`examples/error_modules`)
-  - [ ] Debug info support + easier debugging of generated binaries
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

@@ -1,0 +1,36 @@
+import result;
+
+enum IoError {
+    NotFound,
+    PermissionDenied,
+    Unknown,
+}
+
+class File {
+    path: string;
+
+    fn readAll() -> result.Result[string, IoError] {
+        if this.path == "" {
+            return result.err(IoError.NotFound);
+        }
+
+        return result.ok("file contents");
+    }
+}
+
+fn openFile(path: string) -> result.Result[File, IoError] {
+    if path == "/forbidden" {
+        return result.err(IoError.PermissionDenied);
+    }
+
+    let f: File;
+    f.path = path;
+    return result.ok(f);
+}
+
+fn readConfig(path: string) -> result.Result[string, IoError] {
+    let file: File = openFile(path)?;
+    let contents: string = file.readAll()?;
+
+    return result.ok(contents);
+}

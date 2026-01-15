@@ -1,3 +1,0 @@
-enum Wrap {
-    WrapIt(DoesNotExist),
-}

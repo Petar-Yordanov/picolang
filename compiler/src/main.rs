@@ -4,21 +4,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use mylang_compiler::diagnostics::Diagnostic;
-use mylang_compiler::ir::lower_modules_to_ir;
-use mylang_compiler::llvm_codegen::compile_ir_to_object;
-use mylang_compiler::module_loader::{load_program_from_root_file, ModuleDiagnostics};
+use picolang_compiler::diagnostics::Diagnostic;
+use picolang_compiler::ir::lower_program_to_ir;
+use picolang_compiler::llvm_codegen::compile_ir_to_object;
+use picolang_compiler::module_loader::{load_program_from_root_file, ModuleDiagnostics};
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
     let Some(path) = args.next() else {
-        eprintln!("usage: mylang-compiler <path-to-entry-file.my | path-to-project-dir>");
+        eprintln!("usage: picolang-compiler <path-to-entry-file.pico | path-to-project-dir>");
         return ExitCode::FAILURE;
     };
 
     if args.next().is_some() {
         eprintln!("error: expected exactly one argument");
-        eprintln!("usage: mylang-compiler <path-to-entry-file.my | path-to-project-dir>");
+        eprintln!("usage: picolang-compiler <path-to-entry-file.pico | path-to-project-dir>");
         return ExitCode::FAILURE;
     }
 
@@ -44,10 +44,10 @@ fn handle_entry_path(path: &Path) -> bool {
     };
 
     let entry_file = if meta.is_dir() {
-        let main_path = path.join("main.my");
+        let main_path = path.join("main.pico");
         if !main_path.is_file() {
             eprintln!(
-                "error: directory {} does not contain a main.my file (expected entry point)",
+                "error: directory {} does not contain a main.pico file (expected entry point)",
                 path.display()
             );
             return false;
@@ -81,7 +81,7 @@ fn handle_entry_path(path: &Path) -> bool {
         return false;
     }
 
-    let ir_module = lower_modules_to_ir(program.modules.iter().map(|m| &m.ast));
+    let ir_module = lower_program_to_ir(&program);
 
     let module_name = entry_file
         .file_stem()
@@ -215,9 +215,9 @@ fn link_object_to_executable(obj_path: &Path, exe_path: &Path) -> Result<(), Str
         cmd.arg("-no-pie");
     }
 
-    if let Some(runtime_dir) = env::var_os("MYLANG_RUNTIME_LIB_DIR") {
+    if let Some(runtime_dir) = env::var_os("PICOLANG_RUNTIME_LIB_DIR") {
         cmd.arg("-L").arg(runtime_dir);
-        cmd.arg("-lmylang_runtime");
+        cmd.arg("-lpicolang_runtime");
     }
 
     let status = cmd

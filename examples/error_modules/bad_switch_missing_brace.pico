@@ -1,0 +1,19 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+fn classify(c: Color) -> int {
+    switch c {
+        case Color.Red {
+            return 1;
+        }
+        case Color.Green:
+            // missing { ... } block here
+            return 2;
+        default {
+            return 0;
+        }
+    }
+}

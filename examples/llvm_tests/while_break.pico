@@ -1,0 +1,19 @@
+fn main() -> int {
+    let i: int = 0;
+    let sum: int = 0;
+
+    while i < 10 {
+        sum = sum + i;
+
+        if sum > 10 {
+            break;
+        }
+
+        i = i + 1;
+    }
+
+    log.logInfo("Result:");
+    printInt(sum);
+
+    return 0;
+}

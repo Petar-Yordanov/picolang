@@ -1,4 +1,4 @@
-name: mylang
+name: CI
 
 on:
   push:
@@ -7,32 +7,13 @@ on:
 
 jobs:
   build_test:
-    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: ubuntu
-            mode: ubuntu
-          - name: fedora
-            mode: fedora
-
-    container: ${{ matrix.mode == 'fedora' && 'fedora:41' || '' }}
-
     steps:
-      - name: Install git (Fedora container)
-        if: matrix.mode == 'fedora'
-        run: |
-          dnf -y update
-          dnf -y install git ca-certificates curl
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install deps (Ubuntu)
-        if: matrix.mode == 'ubuntu'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -45,53 +26,40 @@ jobs:
             zlib1g-dev \
             libtinfo-dev
 
-      - name: Install deps (Fedora)
-        if: matrix.mode == 'fedora'
-        run: |
-          dnf -y install \
-            git ca-certificates curl make \
-            clang lld \
-            llvm14 llvm14-devel \
-            libffi-devel zlib-devel ncurses-devel
-
       - name: Set LLVM_SYS_140_PREFIX
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ matrix.mode }}" = "ubuntu" ]; then
-            echo "LLVM_SYS_140_PREFIX=/usr/lib/llvm-14" >> "$GITHUB_ENV"
-          else
-            echo "LLVM_SYS_140_PREFIX=/usr/lib64/llvm14" >> "$GITHUB_ENV"
-          fi
+          echo "LLVM_SYS_140_PREFIX=/usr/lib/llvm-14" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build runtime (release)
-        run: cargo build -p mylang-runtime --release
+        run: cargo build -p picolang-runtime --release
 
       - name: Compile & Run examples/modules (folder mode)
         shell: bash
         env:
-          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+          PICOLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
         run: |
           set -euo pipefail
 
-          cargo build -p mylang-compiler --release
-          cargo run -p mylang-compiler --release -- examples/modules
+          cargo build -p picolang-compiler --release
+          cargo run -p picolang-compiler --release -- examples/modules
 
           CLANG=clang
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
           target="examples/modules"
           if [ -d "$target" ]; then
-            entry="$target/main.my"
+            entry="$target/main.pico"
           else
             entry="$target"
           fi
 
-          obj="${entry%.my}.o"
-          out="${entry%.my}"
+          obj="${entry%.pico}.o"
+          out="${entry%.pico}"
 
           if [ ! -f "$obj" ]; then
             echo "Expected object not found: $obj"
@@ -100,7 +68,7 @@ jobs:
           fi
 
           $CLANG -no-pie "$obj" \
-            -L target/release -lmylang_runtime \
+            -L target/release -lpicolang_runtime \
             -o "$out"
 
           "$out"
@@ -111,7 +79,7 @@ jobs:
       - name: Run examples/llvm_tests per-file (must succeed)
         shell: bash
         env:
-          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+          PICOLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
         run: |
           set -euo pipefail
 
@@ -119,15 +87,15 @@ jobs:
           command -v clang-14 >/dev/null 2>&1 && CLANG=clang-14
 
           shopt -s nullglob
-          files=(examples/llvm_tests/*.my)
+          files=(examples/llvm_tests/*.pico)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No .my files in examples/llvm_tests"
+            echo "No .pico files in examples/llvm_tests"
             exit 1
           fi
 
           for f in "${files[@]}"; do
             dir="$(dirname "$f")"
-            base="$(basename "$f" .my)"
+            base="$(basename "$f" .pico)"
             obj="$dir/$base.o"
             out="$dir/$base"
 
@@ -135,7 +103,7 @@ jobs:
 
             rm -f "$obj" "$out"
 
-            cargo run -p mylang-compiler --release -- "$f"
+            cargo run -p picolang-compiler --release -- "$f"
 
             if [ ! -f "$obj" ]; then
               echo "Expected object not found: $obj"
@@ -143,7 +111,7 @@ jobs:
               exit 1
             fi
 
-            $CLANG -no-pie "$obj" -L target/release -lmylang_runtime -o "$out"
+            $CLANG -no-pie "$obj" -L target/release -lpicolang_runtime -o "$out"
 
             "$out"
             ec=$?
@@ -154,20 +122,20 @@ jobs:
       - name: Run examples/error_modules per-file (must fail)
         shell: bash
         env:
-          MYLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
+          PICOLANG_RUNTIME_LIB_DIR: ${{ github.workspace }}/target/release
         run: |
           set -euo pipefail
 
           shopt -s nullglob
-          files=(examples/error_modules/*.my)
+          files=(examples/error_modules/*.pico)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No .my files in examples/error_modules"
+            echo "No .pico files in examples/error_modules"
             exit 1
           fi
 
           for f in "${files[@]}"; do
             dir="$(dirname "$f")"
-            base="$(basename "$f" .my)"
+            base="$(basename "$f" .pico)"
             obj="$dir/$base.o"
             out="$dir/$base"
 
@@ -175,14 +143,13 @@ jobs:
 
             rm -f "$obj" "$out"
 
-            if cargo run -p mylang-compiler --release -- "$f"; then
+            if cargo run -p picolang-compiler --release -- "$f"; then
               echo "Expected compiler failure, but it succeeded: $f"
               exit 1
             else
               echo "Got expected failure: $f"
             fi
 
-            # extra safety: ensure it didn't accidentally emit outputs
             if [ -e "$obj" ] || [ -e "$out" ]; then
               echo "Unexpected outputs produced for an error test: $f"
               ls -la "$dir"
