@@ -52,7 +52,6 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 Some('/') if self.peek_next_char() == Some('/') => {
-                    // line comment
                     self.advance();
                     self.advance();
                     while let Some(c) = self.peek_char() {
@@ -70,7 +69,6 @@ impl<'a> Lexer<'a> {
     fn lex_number(&mut self) -> Token {
         let start = self.pos;
 
-        // Hex literal: 0xFF, 0Xff
         if self.peek_char() == Some('0') {
             if let Some('x') | Some('X') = self.peek_next_char() {
                 self.advance();
@@ -95,7 +93,6 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Decimal literal
         while let Some(c) = self.peek_char() {
             if c.is_ascii_digit() {
                 self.advance();

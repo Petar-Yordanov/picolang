@@ -1,3 +1,0 @@
-fn logInfo(message: string) -> void {
-    print("[info] " + message);
-}

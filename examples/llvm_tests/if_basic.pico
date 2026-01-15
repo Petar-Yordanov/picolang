@@ -1,0 +1,18 @@
+fn main() -> int {
+    let x: int = 5;
+    let y: int = 7;
+    let z: int = x * y;
+
+    let result: int = 0;
+
+    if z > 30 {
+        result = 42;
+    } else {
+        result = -1;
+    }
+
+    print("Result:");
+    printInt(result);
+
+    return 0;
+}

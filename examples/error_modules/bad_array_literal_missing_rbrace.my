@@ -1,5 +1,0 @@
-fn main() -> int {
-    let xs: []int = []int{ 1, 2, 3;  // no closing '}' before ';'
-
-    return 0;
-}

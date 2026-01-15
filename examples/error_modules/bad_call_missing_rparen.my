@@ -1,4 +1,0 @@
-fn main() -> int {
-    printInt(1;  // missing ')'
-    return 0;
-}

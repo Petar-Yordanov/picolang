@@ -981,14 +981,12 @@ impl Parser {
     }
 
     fn parse_struct_literal_after_head(&mut self, head: Expr) -> Expr {
-        // Head must be a simple path (type name, possibly module-qualified)
         let typ = match head {
             Expr::Path(path) => Type::Named {
                 name: path,
                 type_args: Vec::new(),
             },
             other => {
-                // Not a type name – don't eat the '{', just bail.
                 let span = self.current().span;
                 self.error(span, "struct literal must start with a type name");
                 return other;

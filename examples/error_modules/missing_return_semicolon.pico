@@ -1,0 +1,7 @@
+fn main() -> int {
+    if true {
+        return 1   // missing ';' here
+    }
+
+    return 0;
+}

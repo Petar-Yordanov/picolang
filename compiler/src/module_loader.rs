@@ -13,6 +13,7 @@ pub struct LoadedModule {
     pub path: PathBuf,
     pub source: String,
     pub ast: Module,
+    pub logical_name: String,
 }
 
 #[derive(Debug)]
@@ -50,7 +51,7 @@ pub fn load_program_from_root_file(
     while let Some(path) = worklist.pop() {
         let path = PathBuf::from(&path);
         if !seen_files.insert(path.clone()) {
-            continue; // already processed
+            continue;
         }
 
         let source = match fs::read_to_string(&path) {
@@ -92,15 +93,25 @@ pub fn load_program_from_root_file(
                     });
                 }
 
+                let logical_name = if path == root_file {
+                    "main".to_string()
+                } else {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("module")
+                        .to_string()
+                };
+
                 modules.push(LoadedModule {
                     path: path.clone(),
+                    logical_name,
                     source: source.clone(),
                     ast: module,
                 });
 
                 let imports = find_imports_in_source(&source);
                 for import_name in imports {
-                    let rel = import_name.replace('.', "/") + ".my";
+                    let rel = import_name.replace('.', "/") + ".pico";
                     let imported_path = PathBuf::from(&root_dir.join(rel));
                     if !seen_files.contains(&imported_path) {
                         worklist.push(imported_path);
@@ -121,7 +132,7 @@ pub fn load_program_from_root_file(
 }
 
 pub fn load_program_from_dir(dir: &Path) -> io::Result<(Program, Vec<ModuleDiagnostics>)> {
-    let main_path = dir.join("main.my");
+    let main_path = dir.join("main.pico");
     if main_path.is_file() {
         return load_program_from_root_file(&main_path);
     }
@@ -133,7 +144,7 @@ pub fn load_program_from_dir(dir: &Path) -> io::Result<(Program, Vec<ModuleDiagn
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("my") {
+            if path.extension().and_then(|s| s.to_str()) == Some("pico") {
                 Some(path)
             } else {
                 None
@@ -175,8 +186,15 @@ pub fn load_program_from_dir(dir: &Path) -> io::Result<(Program, Vec<ModuleDiagn
                     });
                 }
 
+                let logical_name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("module")
+                    .to_string();
+
                 modules.push(LoadedModule {
                     path: path.clone(),
+                    logical_name,
                     source,
                     ast: module,
                 });

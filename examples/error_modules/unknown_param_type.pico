@@ -1,0 +1,3 @@
+fn use_unknown(x: UndefinedType) -> int {
+    return 0;
+}
