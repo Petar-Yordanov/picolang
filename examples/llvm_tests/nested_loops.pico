@@ -36,7 +36,7 @@ fn main() -> int {
 
     total = total + 25;
 
-    log.logInfo("Result:");
+    print("Result:");
     printInt(total);
 
     return 0;

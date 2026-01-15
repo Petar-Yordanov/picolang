@@ -9,7 +9,7 @@ fn main() -> int {
         sum = sum + i;
     }
 
-    log.logInfo("Sum:");
+    print("Sum:");
     printInt(sum);
 
     return 0;

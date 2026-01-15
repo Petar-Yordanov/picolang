@@ -13,7 +13,7 @@ fn main() -> int {
 
     let result: int = a + b + c + d + 1;
 
-    log.logInfo("Result:");
+    print("Result:");
     printInt(result);
     return 0;
 }

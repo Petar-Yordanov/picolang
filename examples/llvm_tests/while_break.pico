@@ -12,7 +12,7 @@ fn main() -> int {
         i = i + 1;
     }
 
-    log.logInfo("Result:");
+    print("Result:");
     printInt(sum);
 
     return 0;
